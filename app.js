@@ -18,13 +18,16 @@
   let currentSession = null;
   let currentMode = null;
   let audio = null;
+  let audioWasUnlocked = false;
   let firebaseError = "";
 
-  const nfcSvg = `<svg class="nfc" viewBox="0 0 200 200" aria-hidden="true">
-    <g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round">
-      <path d="M55 70c24 16 24 44 0 60"/>
-      <path d="M82 48c42 29 42 75 0 104"/>
-      <path d="M111 28c58 41 58 103 0 144"/>
+  const nfcSvg = `<svg class="nfc" viewBox="0 0 260 190" aria-hidden="true">
+    <g fill="none" stroke="currentColor" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M36 76c20 13 20 37 0 50"/>
+      <path d="M60 55c36 24 36 68 0 92"/>
+      <path d="M86 34c54 36 54 88 0 124"/>
+      <rect x="130" y="57" width="98" height="72" rx="9"/>
+      <path d="M131 80h96"/>
     </g>
   </svg>`;
 
@@ -214,6 +217,7 @@
   }
 
   function launchScanner() {
+    unlockAudio(true);
     const root = document.documentElement;
     const request = root.requestFullscreen || root.webkitRequestFullscreen;
     try {
@@ -221,15 +225,6 @@
       fullscreenResult?.catch?.(() => {});
     } catch (error) {
       console.warn("Full screen is unavailable.", error);
-    }
-    try {
-      const AudioClass = window.AudioContext || window.webkitAudioContext;
-      if (AudioClass) {
-        audio = audio || new AudioClass();
-        audio.resume?.();
-      }
-    } catch (error) {
-      console.warn("Sound is unavailable.", error);
     }
     document.querySelector("#launch")?.remove();
     try {
@@ -247,15 +242,22 @@
   }
 
   function payUi(message, state = "ready", amount = "") {
-    const result = state === "success"
-      ? '<div class="result-icon">✓</div>'
-      : state === "fail"
-        ? '<div class="result-icon">×</div>'
-        : nfcSvg;
+    let centre = nfcSvg;
+    let heading = message;
+    if (state === "success") {
+      heading = "";
+      centre = '<div class="payment-result"><div class="result-title">APPROVED</div><div class="result-detail">PAYMENT COMPLETE</div></div>';
+    } else if (state === "fail") {
+      const declined = message === "PAYMENT DECLINED";
+      heading = "";
+      centre = `<div class="payment-result"><div class="result-title">${declined ? "DECLINED" : "CARD NOT READ"}</div><div class="result-detail">${declined ? "PLEASE USE ANOTHER CARD" : "PLEASE TRY AGAIN"}</div></div>`;
+    } else if (["g2", "g3"].includes(state)) {
+      centre = '<div class="processing-spinner" aria-hidden="true"></div>';
+    }
     return `<div class="payment-display ${state}">
       ${amount ? `<div class="pay-amount">£${amount}</div>` : ""}
-      <div class="pay-message">${message}</div>
-      ${result}
+      ${heading ? `<div class="pay-message">${heading}</div>` : ""}
+      ${centre}
       <div class="progress">
         <i class="${["g1", "g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
         <i class="${["g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
@@ -308,35 +310,100 @@
     }
   }
 
-  function tone(frequency, start, duration, type = "sine", volume = 0.16) {
-    if (!audio) return;
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    oscillator.connect(gain);
-    gain.connect(audio.destination);
-    oscillator.frequency.value = frequency;
-    oscillator.type = type;
-    const begins = audio.currentTime + start;
-    gain.gain.setValueAtTime(volume, begins);
-    gain.gain.exponentialRampToValueAtTime(0.001, begins + duration);
-    oscillator.start(begins);
-    oscillator.stop(begins + duration);
+  function getAudioContext() {
+    if (audio && audio.state !== "closed") return audio;
+    const AudioClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioClass) return null;
+    audio = new AudioClass();
+    return audio;
   }
 
-  function bleep(success) {
+  function primeAudio() {
     if (!audio) return;
+    const buffer = audio.createBuffer(1, 1, audio.sampleRate);
+    const source = audio.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audio.destination);
+    source.start(0);
+  }
+
+  function unlockAudio(confirm = false) {
+    try {
+      const context = getAudioContext();
+      if (!context) return Promise.resolve(false);
+      primeAudio();
+      const resumed = context.resume?.() || Promise.resolve();
+      return Promise.resolve(resumed).then(() => {
+        audioWasUnlocked = context.state === "running";
+        document.querySelector("#soundUnlock")?.remove();
+        if (confirm && audioWasUnlocked) piezoTone(1180, 0, 0.07, 0.035);
+        return audioWasUnlocked;
+      }).catch((error) => {
+        console.warn("Sound could not be enabled.", error);
+        return false;
+      });
+    } catch (error) {
+      console.warn("Sound is unavailable.", error);
+      return Promise.resolve(false);
+    }
+  }
+
+  function showSoundUnlock() {
+    const scanner = document.querySelector("#scanner");
+    if (!scanner || document.querySelector("#soundUnlock")) return;
+    scanner.insertAdjacentHTML("beforeend", '<button class="sound-unlock" id="soundUnlock">Tap to enable sound</button>');
+    document.querySelector("#soundUnlock").addEventListener("click", () => unlockAudio(true), { once: true });
+  }
+
+  function piezoTone(frequency, start, duration, volume = 0.13) {
+    if (!audio || audio.state !== "running") return;
+    const begins = audio.currentTime + start;
+    const ends = begins + duration;
+    const master = audio.createGain();
+    master.connect(audio.destination);
+    master.gain.setValueAtTime(0.0001, begins);
+    master.gain.linearRampToValueAtTime(volume, begins + 0.006);
+    master.gain.setValueAtTime(volume, Math.max(begins + 0.007, ends - 0.025));
+    master.gain.exponentialRampToValueAtTime(0.0001, ends);
+
+    [
+      { ratio: 1, level: 1, type: "sine" },
+      { ratio: 2, level: 0.16, type: "sine" },
+      { ratio: 3, level: 0.035, type: "triangle" }
+    ].forEach(({ ratio, level, type }) => {
+      const oscillator = audio.createOscillator();
+      const harmonic = audio.createGain();
+      oscillator.connect(harmonic);
+      harmonic.connect(master);
+      harmonic.gain.value = level;
+      oscillator.type = type;
+      oscillator.frequency.setValueAtTime(frequency * ratio * 1.015, begins);
+      oscillator.frequency.exponentialRampToValueAtTime(frequency * ratio, begins + 0.018);
+      oscillator.start(begins);
+      oscillator.stop(ends + 0.01);
+    });
+  }
+
+  async function bleep(success) {
+    if (!audioWasUnlocked || !audio || audio.state !== "running") {
+      const available = await unlockAudio(false);
+      if (!available) {
+        showSoundUnlock();
+        return;
+      }
+    }
     if (currentMode === "payment") {
       if (success) {
-        tone(1500, 0, 0.5, "sine", 0.14);
+        piezoTone(1500, 0, 0.5, 0.115);
       } else {
-        tone(750, 0, 0.2, "sine", 0.16);
-        tone(750, 0.4, 0.2, "sine", 0.16);
+        piezoTone(750, 0, 0.2, 0.14);
+        piezoTone(750, 0.4, 0.2, 0.14);
       }
     } else if (success) {
-      tone(2050, 0, 0.22, "square", 0.11);
+      piezoTone(2050, 0, 0.2, 0.105);
     } else {
-      tone(520, 0, 0.18, "square", 0.13);
-      tone(520, 0.3, 0.18, "square", 0.13);
+      piezoTone(520, 0, 0.18, 0.13);
+      piezoTone(520, 0.3, 0.18, 0.13);
     }
   }
 
@@ -398,9 +465,11 @@
   }
 
   function renderController() {
-    view(`<section class="shell"><div class="panel controller">
-      <div class="brand">Staff controls</div>
-      <h1>Connected</h1>
+    view(`<section class="shell staff-shell"><div class="panel controller">
+      <div class="controller-top">
+        <div><div class="brand">Staff controls</div><h1>Connected</h1></div>
+        <button class="secondary disconnect" id="back">Disconnect</button>
+      </div>
       <span class="status-pill online">Session ${currentSession}</span>
       <div class="mode-badge">${currentMode === "bus" ? "Bus pass" : "Contactless payment"}</div>
       ${currentMode === "payment" ? '<label for="amount">Payment amount (optional)</label><input class="amount-input" id="amount" inputmode="decimal" placeholder="e.g. 4.50">' : ""}
@@ -410,7 +479,6 @@
         <button class="control reject" id="reject" aria-label="Reject">×</button>
       </div>
       <div class="hold-meter" id="meter"><span></span></div>
-      <div class="actions"><button class="secondary" id="back">Disconnect</button></div>
     </div></section>`);
     listen(() => {});
     document.querySelector("#back").addEventListener("click", home);
@@ -479,6 +547,14 @@
 
   window.addEventListener("error", (event) => {
     console.error("Application error:", event.error || event.message);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !audio || !audioWasUnlocked) return;
+    const context = audio;
+    Promise.resolve(context.suspend?.()).catch(() => {}).then(() => context.resume?.()).catch(() => {
+      showSoundUnlock();
+    });
   });
 
   home();

@@ -11,7 +11,7 @@ Local mode is for testing two tabs on one computer/tablet. To link two separate
 devices, add your Firebase Realtime Database details to firebase-config.js,
 change enabled to true, and host the dist folder online.
 
-On an iPad, tap Launch Full Screen. Safari may retain some browser controls.
+On an iPad, tap Launch scanner. This tap also enables sound. Safari may retain some browser controls.
 For the cleanest full-screen result after hosting, use Share > Add to Home Screen
 and launch the app from its Home Screen icon.
 
@@ -37,3 +37,10 @@ VERSION 4 REALISM CHANGES
 - Contactless approval and decline remain on the normal blue terminal screen.
 - Bus LEDs measured and aligned to the exact centres in the reader artwork.
 - More digital LCD styling for the bus-reader messages.
+
+VERSION 6 SOUND AND IPAD CHANGES
+- Terminal sounds now use layered piezo harmonics with realistic attack and release.
+- Payment tones follow the EMV-style 1500 Hz success and 750 Hz double-alert timings.
+- Sound is enabled before the app requests full screen, improving playback on iPad.
+- Audio is restored when Safari returns from the background.
+- If iPadOS blocks audio, a Tap to enable sound button appears on the scanner.
