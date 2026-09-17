@@ -21,3 +21,11 @@ VERSION 2 RELIABILITY CHANGES
 - Press-and-hold uses pointer capture and no longer fails when a finger moves slightly.
 - Repeated commands cancel older animation/reset timers.
 - Local-storage and connection errors are handled without stopping the app.
+
+FIREBASE SETUP – NO TERMINAL REQUIRED
+1. In Firebase Console, open Build > Authentication.
+2. Click Get started, then Sign-in method.
+3. Open Anonymous, switch Enable on, and click Save.
+4. Open Build > Realtime Database > Rules.
+5. Paste the rules supplied with this build and click Publish.
+6. Upload all files from this package to GitHub/Render.

@@ -1,0 +1,10 @@
+{
+  "rules": {
+    "sessions": {
+      "$session": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    }
+  }
+}

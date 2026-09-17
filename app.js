@@ -18,6 +18,7 @@
   let currentSession = null;
   let currentMode = null;
   let audio = null;
+  let firebaseError = "";
 
   const nfcSvg = `<svg class="nfc" viewBox="0 0 200 200" aria-hidden="true">
     <g fill="none" stroke="currentColor" stroke-width="12" stroke-linecap="round">
@@ -61,13 +62,21 @@
       try {
         if (!window.firebase) {
           await loadScript("https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js");
+        }
+        if (!firebase.database) {
           await loadScript("https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js");
         }
+        if (!firebase.auth) {
+          await loadScript("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js");
+        }
         if (!firebase.apps.length) firebase.initializeApp(cfg.config);
+        await firebase.auth().signInAnonymously();
         db = firebase.database();
+        firebaseError = "";
         return true;
       } catch (error) {
         console.error(error);
+        firebaseError = error?.code || error?.message || "Firebase connection failed.";
         firebasePromise = null;
         return false;
       }
@@ -177,7 +186,13 @@
     currentMode = mode;
     currentSession = newCode();
     renderScanner();
-    await initFirebase();
+    const connected = await initFirebase();
+    if (!connected && firebaseConfigured()) {
+      document.querySelector(".launch-card")?.insertAdjacentHTML(
+        "beforeend",
+        '<p class="error-box">Firebase could not connect. Check that Anonymous sign-in is enabled.</p>'
+      );
+    }
     send({ command: "ready", role: "scanner" });
     listen(handleScanner);
   }
@@ -330,7 +345,12 @@
     currentSession = input.value;
     connectButton.classList.add("busy");
     message.textContent = firebaseConfigured() ? "Connecting…" : "Checking local scanner…";
-    await initFirebase();
+    const connected = await initFirebase();
+    if (!connected && firebaseConfigured()) {
+      connectButton.classList.remove("busy");
+      message.innerHTML = `<span class="error-box">Firebase could not connect. Enable Anonymous sign-in in Firebase Authentication. ${firebaseError}</span>`;
+      return;
+    }
     const localData = safeReadLocal();
     if (localData) {
       currentMode = localData.mode || "bus";
