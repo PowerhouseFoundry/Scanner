@@ -5,7 +5,7 @@
   const cfg = window.SCANNER_FIREBASE || { enabled: false };
   const BUS_IMG = "assets/bus-reader.png";
   const PAY_IMG = "assets/payment-reader.png";
-  const HOLD_TIME = 2400;
+  const HOLD_TIME = 1650;
   const RESET_TIME = 3200;
 
   let db = null;
@@ -13,7 +13,7 @@
   let channel = null;
   let stopListening = null;
   let holdTimer = null;
-  let stageTimer = null;
+  let stageTimers = [];
   let resetTimer = null;
   let currentSession = null;
   let currentMode = null;
@@ -239,9 +239,9 @@
 
   function busUi(message, state = "ready") {
     return `<div class="leds">
-      <i class="led green ${["g1", "g2", "success"].includes(state) ? "on" : ""}"></i>
-      <i class="led green ${["g2", "success"].includes(state) ? "on" : ""}"></i>
-      <i class="led green ${state === "success" ? "on" : ""}"></i>
+      <i class="led green ${["g1", "g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
+      <i class="led green ${["g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
+      <i class="led green ${["g3", "success"].includes(state) ? "on" : ""}"></i>
       <i class="led red ${state === "fail" ? "on" : ""}"></i>
     </div><div class="bus-display">${message}</div>`;
   }
@@ -257,8 +257,9 @@
       <div class="pay-message">${message}</div>
       ${result}
       <div class="progress">
-        <i class="${["g1", "g2", "success"].includes(state) ? "on" : ""}"></i>
-        <i class="${["g2", "success"].includes(state) ? "on" : ""}"></i>
+        <i class="${["g1", "g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
+        <i class="${["g2", "g3", "success"].includes(state) ? "on" : ""}"></i>
+        <i class="${["g3", "success"].includes(state) ? "on" : ""}"></i>
         <i class="${state === "success" ? "on" : ""}"></i>
       </div>
     </div>`;
@@ -271,7 +272,8 @@
   }
 
   function clearAnimationTimers() {
-    clearTimeout(stageTimer);
+    stageTimers.forEach(clearTimeout);
+    stageTimers = [];
     clearTimeout(resetTimer);
   }
 
@@ -285,9 +287,12 @@
     const amount = data.amount || "";
     if (data.command === "start") {
       draw(currentMode === "bus" ? "PLEASE HOLD" : "PLEASE HOLD CARD", "g1", amount);
-      stageTimer = setTimeout(() => {
+      stageTimers.push(setTimeout(() => {
         draw(currentMode === "bus" ? "PLEASE HOLD" : "PROCESSING", "g2", amount);
-      }, 900);
+      }, 450));
+      stageTimers.push(setTimeout(() => {
+        draw(currentMode === "bus" ? "PLEASE HOLD" : "PROCESSING", "g3", amount);
+      }, 950));
     } else if (data.command === "success") {
       draw(currentMode === "bus" ? "PASS ACCEPTED" : "PAYMENT APPROVED", "success", amount);
       bleep(true);
@@ -303,19 +308,36 @@
     }
   }
 
-  function bleep(success) {
+  function tone(frequency, start, duration, type = "sine", volume = 0.16) {
     if (!audio) return;
-    const duration = success ? 0.18 : 0.42;
     const oscillator = audio.createOscillator();
     const gain = audio.createGain();
     oscillator.connect(gain);
     gain.connect(audio.destination);
-    oscillator.frequency.value = success ? 980 : 220;
-    oscillator.type = success ? "sine" : "square";
-    gain.gain.setValueAtTime(0.18, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + duration);
-    oscillator.start();
-    oscillator.stop(audio.currentTime + duration);
+    oscillator.frequency.value = frequency;
+    oscillator.type = type;
+    const begins = audio.currentTime + start;
+    gain.gain.setValueAtTime(volume, begins);
+    gain.gain.exponentialRampToValueAtTime(0.001, begins + duration);
+    oscillator.start(begins);
+    oscillator.stop(begins + duration);
+  }
+
+  function bleep(success) {
+    if (!audio) return;
+    if (currentMode === "payment") {
+      if (success) {
+        tone(1500, 0, 0.5, "sine", 0.14);
+      } else {
+        tone(750, 0, 0.2, "sine", 0.16);
+        tone(750, 0.4, 0.2, "sine", 0.16);
+      }
+    } else if (success) {
+      tone(2050, 0, 0.22, "square", 0.11);
+    } else {
+      tone(520, 0, 0.18, "square", 0.13);
+      tone(520, 0.3, 0.18, "square", 0.13);
+    }
   }
 
   function join() {

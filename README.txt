@@ -29,3 +29,11 @@ FIREBASE SETUP – NO TERMINAL REQUIRED
 4. Open Build > Realtime Database > Rules.
 5. Paste the rules supplied with this build and click Publish.
 6. Upload all files from this package to GitHub/Render.
+
+VERSION 4 REALISM CHANGES
+- Faster 1.65-second training scan with three staged bus-reader lights.
+- EMV-style 1500 Hz payment success tone and 750 Hz double alert.
+- Sharper piezo-style bus pass success and failure sounds.
+- Contactless approval and decline remain on the normal blue terminal screen.
+- Bus LEDs measured and aligned to the exact centres in the reader artwork.
+- More digital LCD styling for the bus-reader messages.
